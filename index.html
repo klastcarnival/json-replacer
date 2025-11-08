@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JSON 단어 치환 도구 (최종 개선)</title>
+    <title>JSON 단어 치환 및 삭제 도구 (접기/펴기)</title>
     <style>
         body { font-family: Arial, sans-serif; padding: 20px; background-color: #f4f4f4; }
-        h1 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        h1 { color: #2c3e50; border-bottom: 2px solid #3499db; padding-bottom: 10px; }
         .container { max-width: 800px; margin: 0 auto; background-color: #fff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
         .section { margin-bottom: 25px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #f9f9f9; }
         label { font-weight: bold; display: block; margin-bottom: 8px; color: #34495e; }
@@ -14,27 +14,44 @@
         button { background-color: #3498db; color: white; cursor: pointer; border: none; transition: background-color 0.3s; margin-left: 5px; }
         button:hover:not(:disabled) { background-color: #2980b9; }
         button:disabled { background-color: #bdc3c7; cursor: not-allowed; }
+        
+        /* JSON 표시 영역 */
         #jsonDisplay { 
-            width: 100%; 
-            height: 300px; 
-            margin-top: 10px; 
-            padding: 10px; 
-            border: 1px solid #ccc; 
-            box-sizing: border-box; 
-            overflow: auto; 
-            background-color: #fff; 
-            white-space: pre; 
-            font-family: monospace; 
-            line-height: 1.5;
+            width: 100%; height: 300px; margin-top: 10px; padding: 10px; 
+            border: 1px solid #ccc; box-sizing: border-box; overflow: auto; 
+            background-color: #fff; white-space: pre; font-family: monospace; line-height: 1.5;
         }
+        
+        /* 형광펜 스타일 */
         mark { background-color: #f1c40f; padding: 0 2px; border-radius: 3px; }
-        .result-box { padding: 10px; background-color: #ecf0f1; border-radius: 5px; margin-top: 10px; }
+        
+        /* 검색 결과 인덱스 표시 영역 */
+        #searchResultContainer { margin-top: 15px; }
+        
+        /* Details/Summary 스타일 */
+        details { border: 1px solid #ddd; border-radius: 5px; margin-top: 10px; background-color: #fff; }
+        summary { 
+            padding: 10px; background-color: #ecf0f1; cursor: pointer; 
+            font-weight: bold; list-style-type: '▶ '; /* 닫혔을 때 화살표 */
+        }
+        details[open] > summary { 
+            list-style-type: '▼ '; /* 열렸을 때 화살표 */
+        }
+        
+        /* 인덱스 항목 스타일 */
+        #searchResultList { padding: 10px; }
+        .index-item { 
+            border: 1px solid #e0e0e0; padding: 10px; 
+            margin-bottom: 10px; border-radius: 4px; background-color: #fcfcfc;
+        }
+        .index-title { font-weight: bold; color: #34495e; margin-bottom: 5px; border-bottom: 1px dashed #ccc; padding-bottom: 5px; }
+        .index-content { font-family: monospace; white-space: pre-wrap; font-size: 13px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>💬 JSON 단어 치환 도구</h1>
+    <h1>💬 JSON 단어 치환 및 삭제 도구</h1>
     
     <div class="section">
         <label for="fileInput">1️⃣ JSON 파일 업로드</label>
@@ -42,17 +59,20 @@
     </div>
 
     <div class="section">
-        <label>2️⃣ 단어 검색 및 개수 확인</label>
+        <label>2️⃣ 단어 검색 및 인덱스 추출</label>
         <input type="text" id="findWord" placeholder="검색할 단어" style="width: 35%;">
-        <button onclick="searchWord()" id="searchButton" disabled>단어 검색</button>
-        <div id="searchResult" class="result-box" style="display: none;"></div>
+        <button onclick="searchWord()" id="searchButton" disabled>단어 검색 및 인덱스 추출</button>
+        <p id="searchCount" style="margin-top: 10px; font-weight: bold; display: none;"></p>
+        
+        <div id="searchResultContainer">
+            </div>
     </div>
 
     <div class="section">
-        <label>3️⃣ 치환 단어 입력 및 실행</label>
-        <input type="text" id="replaceWord" placeholder="바꿀 단어" style="width: 35%;">
-        <button onclick="replaceAndDisplay()" id="replaceButton" disabled>단어 치환 실행</button>
-        <p style="margin-top: 10px; color: #888;">* 치환 후 아래 내용이 업데이트되고 형광펜으로 표시됩니다.</p>
+        <label>3️⃣ 단어 치환 또는 삭제 실행</label>
+        <input type="text" id="replaceWord" placeholder="바꿀 단어 (비워두면 삭제)" style="width: 35%;">
+        <button onclick="replaceAndDisplay()" id="replaceButton" disabled>치환 / 삭제 실행</button>
+        <p style="margin-top: 10px; color: #888;">* **바꿀 단어** 칸을 비워두면 **찾은 단어**가 완전히 **삭제**됩니다.</p>
     </div>
 
     <div class="section">
@@ -71,9 +91,7 @@
 
 <script>
     let currentJsonObject = null; // 현재 (수정된) JSON 객체 (다운로드용)
-    let originalJsonText = ''; // 최초 로드된 JSON 텍스트
-    let lastFindWord = ''; // 마지막으로 검색/치환에 사용된 단어
-    let lastReplaceWord = ''; // 마지막으로 치환에 사용된 단어
+    let replacementCount = 0; // 치환된 단어 수 카운터
 
     // 버튼 활성화/비활성화 함수
     function updateButtonStates() {
@@ -91,13 +109,14 @@
         const reader = new FileReader();
         reader.onload = function(e) {
             try {
-                originalJsonText = e.target.result;
-                currentJsonObject = JSON.parse(originalJsonText);
+                const jsonText = e.target.result;
+                currentJsonObject = JSON.parse(jsonText);
                 
                 const formattedText = JSON.stringify(currentJsonObject, null, 2);
                 document.getElementById('jsonDisplay').textContent = formattedText;
                 document.getElementById('statusMessage').textContent = '✅ JSON 파일 로드 성공. 검색을 시작하세요.';
-                document.getElementById('searchResult').style.display = 'none';
+                document.getElementById('searchCount').style.display = 'none';
+                document.getElementById('searchResultContainer').innerHTML = ''; // 인덱스 목록 초기화
                 updateButtonStates();
             } catch (error) {
                 document.getElementById('statusMessage').textContent = '⚠️ 파일 로드 오류: 유효한 JSON 형식이 아닙니다.';
@@ -110,30 +129,32 @@
     });
 
     /**
-     * JSON 객체를 재귀적으로 탐색하며 문자열 값 내에서 단어 개수를 세는 함수
+     * JSON 객체를 재귀적으로 탐색하며 단어를 검색하고 인덱스를 추출하는 함수.
      */
-    function countWord(data, find) {
-        let count = 0;
+    function searchAndExtract(data, find, results, currentPath = '') {
         const regex = new RegExp(find, 'g');
-
+        
         if (typeof data === 'string') {
-            const matches = data.match(regex);
-            if (matches) {
-                count += matches.length;
+            if (data.match(regex)) {
+                results.push({
+                    path: currentPath,
+                    content: data
+                });
             }
         } else if (Array.isArray(data)) {
-            data.forEach(item => {
-                count += countWord(item, find);
+            data.forEach((item, index) => {
+                searchAndExtract(item, find, results, `${currentPath}[${index}]`);
             });
         } else if (typeof data === 'object' && data !== null) {
             for (const key in data) {
-                count += countWord(data[key], find);
+                if (data.hasOwnProperty(key)) {
+                    searchAndExtract(data[key], find, results, `${currentPath}.${key}`);
+                }
             }
         }
-        return count;
     }
 
-    // 2. 단어 검색 기능
+    // 2. 단어 검색 및 인덱스 추출 기능
     function searchWord() {
         if (!currentJsonObject) {
             document.getElementById('statusMessage').textContent = '⚠️ 먼저 JSON 파일을 업로드해주세요.';
@@ -146,37 +167,73 @@
             return;
         }
 
-        lastFindWord = findWord;
+        const results = [];
+        searchAndExtract(currentJsonObject, findWord, results);
+
+        const totalCount = results.length;
+        document.getElementById('searchCount').innerHTML = `🔍 검색 결과: "${findWord}"(은)는 총 **${totalCount}**개 포함된 항목에서 발견되었습니다.`;
+        document.getElementById('searchCount').style.display = 'block';
+        document.getElementById('statusMessage').textContent = `🔍 단어 검색 및 인덱스 추출 완료.`;
         
-        // 검색은 현재 로드된 객체(수정된 내용 포함)를 기준으로 수행
-        const totalCount = countWord(currentJsonObject, findWord);
+        // 인덱스 목록 접기/펴기 컨테이너 업데이트
+        const container = document.getElementById('searchResultContainer');
+        container.innerHTML = ''; // 기존 내용 초기화
 
-        const resultDiv = document.getElementById('searchResult');
-        resultDiv.innerHTML = `검색 결과: "${findWord}"(은)는 총 **${totalCount}**개 발견되었습니다.`;
-        resultDiv.style.display = 'block';
-        document.getElementById('statusMessage').textContent = `🔍 단어 검색 완료.`;
+        if (totalCount > 0) {
+            // details 요소 생성
+            const detailsElement = document.createElement('details');
+            
+            // summary 요소 생성
+            const summaryElement = document.createElement('summary');
+            summaryElement.textContent = `총 ${totalCount}개 항목의 상세 경로 및 내용 보기 (클릭하여 펼치기)`;
+            
+            // 목록 컨테이너
+            const resultListDiv = document.createElement('div');
+            resultListDiv.id = 'searchResultList';
+            
+            results.forEach((item, idx) => {
+                const indexItem = document.createElement('div');
+                indexItem.className = 'index-item';
+                
+                const pathDisplay = item.path.replace(/^\./, '').replace(/\[(\d+)\]/g, '[$1]').replace(/\.([a-zA-Z0-9_]+)/g, '.$1');
 
-        // 검색된 단어를 형광펜으로 표시 (치환은 하지 않고 표시만)
+                // 내용에 형광펜 적용
+                const regex = new RegExp(findWord, 'g');
+                const highlightedContent = item.content.replace(regex, `<mark>${findWord}</mark>`);
+
+                indexItem.innerHTML = `
+                    <div class="index-title">항목 ${idx + 1} / 경로: ${pathDisplay}</div>
+                    <div class="index-content">${highlightedContent}</div>
+                `;
+                resultListDiv.appendChild(indexItem);
+            });
+
+            detailsElement.appendChild(summaryElement);
+            detailsElement.appendChild(resultListDiv);
+            container.appendChild(detailsElement);
+        } else {
+            container.innerHTML = `<p style="color: #7f8c8d; padding: 5px 0;">검색된 항목이 없습니다.</p>`;
+        }
+        
+        // 메인 디스플레이에 형광펜 표시
         highlightDisplayContent(currentJsonObject, findWord, findWord);
     }
 
     /**
-     * JSON 객체를 재귀적으로 탐색하며 문자열 값을 치환하는 함수 (순수 데이터만 처리)
+     * JSON 객체를 재귀적으로 탐색하며 문자열 값을 치환/삭제하는 함수 (순수 데이터만 처리)
      */
     function deepReplace(data, find, replace, countObj) {
         if (typeof data === 'string') {
             if (!find) return data; 
 
+            const actualReplace = replace || ''; 
             const regex = new RegExp(find, 'g');
             
-            // 치환 횟수 카운트
             const matches = data.match(regex);
             if (matches) {
                 countObj.count += matches.length;
             }
-
-            // 실제 치환 작업
-            return data.replace(regex, replace);
+            return data.replace(regex, actualReplace);
         } else if (Array.isArray(data)) {
             return data.map(item => deepReplace(item, find, replace, countObj));
         } else if (typeof data === 'object' && data !== null) {
@@ -191,24 +248,24 @@
 
     // JSON 텍스트를 포맷팅하고 특정 단어에 형광펜을 적용하여 화면에 표시하는 함수
     function highlightDisplayContent(jsonObject, find, replace) {
-        // 1. 순수 JSON 텍스트 포맷팅
         let displayJsonText = JSON.stringify(jsonObject, null, 2);
+        
+        // 치환이 아닌 삭제인 경우, 형광펜은 findWord에 적용되어야 함.
+        const highlightTarget = replace || find;
 
-        // 2. HTML 특수 문자 이스케이프 (div의 textContent에 넣을 때는 필요 없지만, 안전을 위해)
-        // 이 단계를 통해 JSON 내부의 <mark>와 같은 HTML 태그가 실수로 렌더링되는 것을 방지합니다.
+        // HTML 특수 문자 이스케이프
         const escapedText = displayJsonText.replace(/&/g, '&amp;')
                                           .replace(/</g, '&lt;')
                                           .replace(/>/g, '&gt;');
         
-        // 3. 치환된/검색된 단어에만 <mark> 태그 삽입
-        // 이 과정이 형광펜 표시의 핵심입니다.
-        const regex = new RegExp(replace, 'g');
-        const highlightedText = escapedText.replace(regex, `<mark>${replace}</mark>`);
+        // 치환된/검색된 단어에만 <mark> 태그 삽입
+        const regex = new RegExp(highlightTarget, 'g');
+        const highlightedText = escapedText.replace(regex, `<mark>${highlightTarget}</mark>`);
 
         document.getElementById('jsonDisplay').innerHTML = highlightedText;
     }
 
-    // 3. 단어 치환 및 표시 기능
+    // 3. 단어 치환 및 삭제 실행 기능
     function replaceAndDisplay() {
         if (!currentJsonObject) {
             document.getElementById('statusMessage').textContent = '⚠️ 먼저 JSON 파일을 업로드해주세요.';
@@ -216,60 +273,52 @@
         }
 
         const findWord = document.getElementById('findWord').value.trim();
-        const replaceWord = document.getElementById('replaceWord').value.trim();
+        const replaceWord = document.getElementById('replaceWord').value.trim(); 
 
         if (!findWord) {
             document.getElementById('statusMessage').textContent = '⚠️ 검색할 단어를 입력해주세요.';
             return;
         }
-
-        if (!replaceWord) {
-             document.getElementById('statusMessage').textContent = '⚠️ 바꿀 단어를 입력해주세요.';
-            return;
-        }
         
-        lastFindWord = findWord;
-        lastReplaceWord = replaceWord;
-
         try {
-            // **순수 JSON 객체**에 치환을 적용하여 다운로드용 객체를 업데이트합니다.
             const countObj = { count: 0 };
             const modifiedObjectForDownload = deepReplace(
-                // 현재 객체를 깊은 복사하여 치환 (연속 치환 가능하도록)
                 JSON.parse(JSON.stringify(currentJsonObject)),
                 findWord, 
                 replaceWord, 
                 countObj
             );
             
-            currentJsonObject = modifiedObjectForDownload; // 다운로드될 객체 업데이트
+            currentJsonObject = modifiedObjectForDownload; 
             const replacementCount = countObj.count; 
             
-            // 화면 표시를 위해 치환된 내용에 형광펜을 적용합니다.
-            highlightDisplayContent(currentJsonObject, findWord, replaceWord);
+            const displayTarget = replaceWord || findWord;
+            highlightDisplayContent(currentJsonObject, findWord, displayTarget);
             
-            document.getElementById('statusMessage').textContent = 
-                `✅ 단어 치환 완료: "${findWord}" -> "${replaceWord}". 총 **${replacementCount}**개 치환됨.`;
+            let actionType = replaceWord ? "치환" : "삭제";
+            let statusMessage = replaceWord ? 
+                `✅ 단어 치환 완료: "${findWord}" -> "${replaceWord}". 총 **${replacementCount}**개 치환됨.` :
+                `✅ 단어 삭제 완료: "${findWord}"(이)가 삭제되었습니다. 총 **${replacementCount}**개 처리됨.`;
+                
+            document.getElementById('statusMessage').textContent = statusMessage;
             
-            // 검색 결과도 업데이트
-            const resultDiv = document.getElementById('searchResult');
-            resultDiv.innerHTML = `치환 완료: "${findWord}"(이)가 "${replaceWord}"(으)로 **${replacementCount}**개 변경되었습니다.`;
-            resultDiv.style.display = 'block';
+            // 검색 결과 컨테이너 업데이트 메시지
+            document.getElementById('searchCount').innerHTML = `✅ ${actionType} 완료. 총 **${replacementCount}**개의 단어가 변경되었습니다.`;
+            document.getElementById('searchResultContainer').innerHTML = `<p style="color: #7f8c8d; padding: 5px 0;">(업데이트된 인덱스를 다시 확인하려면 '단어 검색'을 다시 눌러주세요.)</p>`;
 
         } catch (error) {
-            document.getElementById('statusMessage').textContent = '❌ 치환 중 오류 발생: ' + error.message;
+            document.getElementById('statusMessage').textContent = '❌ 처리 중 오류 발생: ' + error.message;
             console.error(error);
         }
     }
 
-    // 5. 수정된 JSON 파일 다운로드 기능
+    // 5. 수정된 JSON 파일 다운로드 기능 (변경 없음)
     function downloadJsonFile() {
         if (!currentJsonObject) {
             document.getElementById('statusMessage').textContent = '⚠️ 다운로드할 내용이 없습니다.';
             return;
         }
 
-        // currentJsonObject는 순수한 JSON 객체입니다.
         const jsonText = JSON.stringify(currentJsonObject, null, 2);
         
         const blob = new Blob([jsonText], { type: 'application/json' });
